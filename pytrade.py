@@ -34,7 +34,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # ------------------------------------------------------------------------------
 app = Flask(__name__)
 
-# IMPORTANT: keep this secret strong. You may move it to .env (JWT_SECRET)
+# IMPORTANT: For Railway, you should set this as an environment variable
 app.config["JWT_SECRET"] = os.environ.get(
     "JWT_SECRET",
     "96c63da06374c1bde332516f3acbd23c84f35f90d8a6321a25d790a0a451af32"
@@ -44,21 +44,50 @@ app.config["JWT_SECRET"] = os.environ.get(
 ACCESS_MINUTES  = int(os.environ.get("ACCESS_MINUTES", "15"))   # 15 minutes
 REFRESH_DAYS    = int(os.environ.get("REFRESH_DAYS", "7"))      # 7 days
 
-# Allow your Angular Space + local dev
-FRONTEND_ORIGIN = os.environ.get(
-    "FRONTEND_ORIGIN",
-    "https://pykara-py-trade.static.hf.space,https://localhost:4200"
-)
-allowed = [o.strip() for o in FRONTEND_ORIGIN.split(",") if o.strip()]
+# Your frontend domains - add Railway for local testing too
+FRONTEND_ORIGINS = [
+    "https://teal-cassowary-616450.hostingersite.com",  # Your Hostinger domain
+    "https://localhost:4200",                           # Local Angular dev
+    "http://localhost:4200",                            # Local HTTP dev
+]
+
+# Also include Railway domain for API testing if needed
+RAILWAY_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+if RAILWAY_DOMAIN:
+    FRONTEND_ORIGINS.append(f"https://{RAILWAY_DOMAIN}")
+
 CORS(
     app,
-    resources={r"/*": {"origins": allowed}},
+    resources={r"/*": {"origins": FRONTEND_ORIGINS}},
     supports_credentials=True,           # allow cookies
     expose_headers=["Authorization"],    # allow SPA to read Authorization if needed
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 )
 
 # Ensure table exists at startup
 ensure_user_table_exists()
+
+# ------------------------------------------------------------------------------
+# Database connection for Railway
+# ------------------------------------------------------------------------------
+def get_railway_db_connection():
+    """
+    Get database connection for Railway environment
+    """
+    # For Railway, use environment variables
+    db_server = os.environ.get("DB_SERVER", "")
+    db_name = os.environ.get("DB_NAME", "")
+    db_user = os.environ.get("DB_USER", "")
+    db_password = os.environ.get("DB_PASSWORD", "")
+    
+    if db_server and db_name:
+        # For Railway PostgreSQL or other cloud DB
+        connection_string = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={db_server};DATABASE={db_name};UID={db_user};PWD={db_password}"
+        return pyodbc.connect(connection_string)
+    else:
+        # Fallback to local SQL Server
+        return get_db_connection()
 
 # ------------------------------------------------------------------------------
 # Helpers: JWT
@@ -94,10 +123,11 @@ def _decode_jwt(token: str) -> dict:
 
 def set_token_cookies(resp, access_token: str, refresh_token: str):
     """
-    Sets HttpOnly cookies. For local dev we use SameSite=None + Secure=False if http.
-    In production, set Secure=True and run on HTTPS.
+    For Railway (HTTPS), use Secure=True, SameSite=None
     """
-    secure = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
+    is_production = os.environ.get("RAILWAY_ENVIRONMENT", "") == "production"
+    secure = True  # Always use secure on Railway
+    
     # Access cookie ~ session/short-lived
     resp.set_cookie(
         "access_token",
@@ -227,7 +257,7 @@ def _rehash_and_update_if_needed(user_id: int, email: str, scheme: str, conn) ->
 # ------------------------------------------------------------------------------
 @app.get("/health")
 def health():
-    return {"status": "ok"}, 200
+    return {"status": "ok", "timestamp": datetime.datetime.now().isoformat()}, 200
 
 # ------------------------------------------------------------------------------
 # Public APIs
@@ -337,7 +367,7 @@ def sign_up():
     if not email or not password:
         return jsonify({"message": "Email and password are required"}), 400
 
-    conn = get_db_connection()
+    conn = get_railway_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute('SELECT 1 FROM Users WHERE email = ?', (email,))
@@ -359,7 +389,7 @@ def sign_up():
         conn.close()
 
 def _do_signin(email: str, password: str):
-    conn = get_db_connection()
+    conn = get_railway_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute('SELECT id, name, email, password FROM Users WHERE email = ?', (email,))
@@ -451,7 +481,7 @@ def refresh():
         payload = {"accessToken": new_access, "accessTokenExpiresIn": ACCESS_MINUTES * 60}
         resp = make_response(jsonify(payload), 200)
         # update access_token cookie only
-        secure = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
+        secure = True  # Always secure on Railway
         resp.set_cookie(
             "access_token",
             new_access,
@@ -475,7 +505,9 @@ def me():
     Returns the current user's profile if the access token is valid.
     """
     user = getattr(request, "user", None)
-    return jsonify({"userId": user["userId"], "email": user["email"]})
+    if user:
+        return jsonify({"userId": user["userId"], "email": user["email"], "name": user.get("name", "")})
+    return jsonify({"error": "User not found"}), 404
 
 @app.post("/logout")
 def logout():
@@ -489,7 +521,6 @@ def logout():
 
 #community forum to post the data
 
-# --- Add this API anywhere below other routes ---
 @app.post("/posts")
 @jwt_required
 def create_community_post():
@@ -509,7 +540,7 @@ def create_community_post():
     if not body:
         return jsonify({"message": "body is required"}), 400
 
-    conn = get_db_connection()
+    conn = get_railway_db_connection()
     cursor = None
     try:
         cursor = conn.cursor()
@@ -563,7 +594,7 @@ def list_community_posts():
     except Exception:
         offset = 0
 
-    conn = get_db_connection()
+    conn = get_railway_db_connection()
     cur = None
     try:
         cur = conn.cursor()
@@ -618,11 +649,46 @@ def list_community_posts():
         except:
             pass
         conn.close()
+
+# ------------------------------------------------------------------------------
+# Railway-specific startup
+# ------------------------------------------------------------------------------
+# Create a new file: railway_startup.py or add this to pytrade.py
+def initialize_for_railway():
+    """
+    Railway-specific initialization
+    """
+    print("Initializing for Railway deployment...")
+    
+    # Check for required environment variables
+    required_vars = ["JWT_SECRET"]
+    missing = [var for var in required_vars if not os.environ.get(var)]
+    
+    if missing:
+        print(f"WARNING: Missing environment variables: {missing}")
+        print("Using default values. For production, set these in Railway Variables.")
+    
+    # Initialize database tables
+    try:
+        ensure_user_table_exists()
+        print("Database tables verified.")
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+    
+    print("Railway initialization complete.")
+
 # ------------------------------------------------------------------------------
 # Run
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
-    # Default to 5000 locally; on Hugging Face Spaces the platform injects PORT.
+    # Call initialization
+    initialize_for_railway()
+    
+    # Default to 5000 locally; on Railway the platform injects PORT.
     port = int(os.environ.get("PORT", "5000"))
     host = "127.0.0.1" if port == 5000 else "0.0.0.0"
-    app.run(host=host, port=port, debug=(host == "127.0.0.1"))
+    
+    print(f"Starting Flask server on {host}:{port}")
+    print(f"Frontend origins: {FRONTEND_ORIGINS}")
+    
+    app.run(host=host, port=port, debug=(os.environ.get("FLASK_DEBUG", "false").lower() == "true"))
