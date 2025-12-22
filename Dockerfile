@@ -31,8 +31,8 @@ ENV PYTHONUNBUFFERED=1
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Expose port (Railway will override $PORT)
+# Expose the default port (Railway will override via $PORT)
 EXPOSE 5000
 
-# FIXED: Use shell form to expand PORT variable
-CMD gunicorn --bind 0.0.0.0:${PORT:-5000} pytrade:app
+# FIXED: Use a shell script to ensure PORT variable is expanded correctly
+CMD ["./start.sh"]
