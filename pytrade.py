@@ -45,10 +45,13 @@ ACCESS_MINUTES  = int(os.environ.get("ACCESS_MINUTES", "15"))   # 15 minutes
 REFRESH_DAYS    = int(os.environ.get("REFRESH_DAYS", "7"))      # 7 days
 
 # Your frontend domains - add Railway for local testing too
+# Your frontend domains - include ALL possible domains
 FRONTEND_ORIGINS = [
     "https://teal-cassowary-616450.hostingersite.com",  # Your Hostinger domain
+    "https://pykara-py-trade.static.hf.space",          # Your Hugging Face domain
     "https://localhost:4200",                           # Local Angular dev
     "http://localhost:4200",                            # Local HTTP dev
+    "https://web-production-46a63.up.railway.app",      # Your Railway domain for testing
 ]
 
 # Also include Railway domain for API testing if needed
