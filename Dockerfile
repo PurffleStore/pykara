@@ -34,5 +34,5 @@ USER appuser
 # Expose port (Railway will override $PORT)
 EXPOSE 5000
 
-# Start command for Railway
-CMD ["gunicorn", "--bind", "0.0.0.0:${PORT:-5000}", "pytrade:app"]
+# FIXED: Use shell form to expand PORT variable
+CMD gunicorn --bind 0.0.0.0:${PORT:-5000} pytrade:app

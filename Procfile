@@ -1,1 +1,1 @@
-web: gunicorn pytrade:app
+web: bash start.sh
