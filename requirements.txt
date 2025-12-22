@@ -13,7 +13,7 @@ gnews
 newspaper3k==0.2.8
 lxml_html_clean==0.1.1
 nltk==3.8.1
-rapidfuzz==3.10.2
+rapidfuzz==3.14.3
 gunicorn==21.2.0
 python-dotenv==1.0.1
 openai>=1.0.0
