@@ -684,25 +684,25 @@ def initialize_for_railway():
 # Run
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
-    # Call initialization
-    initialize_for_railway()
+    # Safely get the PORT from environment
+    port_str = os.getenv("PORT")
     
-    # Railway injects PORT as environment variable
-    port_str = os.environ.get("PORT", "5000")
-    
-    # Ensure PORT is a valid integer
-    try:
-        port = int(port_str)
-    except ValueError:
-        print(f"ERROR: Invalid PORT value '{port_str}'. Using default 5000.")
+    # If PORT is not set or is an empty string, use default
+    if not port_str:
         port = 5000
+        print(f"PORT not set, defaulting to {port}")
+    else:
+        # Clean the string and try to convert
+        port_str_clean = port_str.strip()
+        try:
+            port = int(port_str_clean)
+        except ValueError:
+            # If conversion fails (e.g., it's the literal '$PORT'), use default
+            print(f"Invalid PORT value '{port_str_clean}', defaulting to 5000")
+            port = 5000
     
-    # Always use 0.0.0.0 for Railway (needs to listen on all interfaces)
+    # Ensure we bind to all interfaces for Railway
     host = "0.0.0.0"
     
-    print(f"Starting Flask server on {host}:{port}")
-    print(f"Frontend origins: {FRONTEND_ORIGINS}")
-    
-    # Disable debug mode in production
-    debug_mode = os.environ.get("FLASK_DEBUG", "").lower() == "true"
-    app.run(host=host, port=port, debug=debug_mode)
+    print(f"Starting server on {host}:{port}")
+    app.run(host=host, port=port, debug=False)
